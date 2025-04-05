@@ -1,6 +1,6 @@
-# parse
+# nip
 
-A simple string parser library for Roc, using templates with fields like `"Hello, {salutation:Str}"`.
+Nip is a simple string parser library for Roc, using templates with fields like `"Hello, {salutation:Str}"`.
 
 ## Fields syntax
 
