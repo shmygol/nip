@@ -1,0 +1,5 @@
+/nip
+main
+*.o
+.DS_Store
+generated-docs
