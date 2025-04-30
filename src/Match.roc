@@ -5,6 +5,8 @@
 ## and returns a dictionary, used by [Nip.match_all].
 module [Spec, Matcher, all_specs, anything, literal]
 
+import Interval exposing [Interval]
+
 # Matcher and Spec below need a type variable
 # because tag unions in type aliases are closed by default
 # see https://roc.zulipchat.com/#narrow/channel/231634-beginners/topic/Type.20mismatch.20with.20a.20function.20in.20arguments/near/512117920
@@ -24,7 +26,7 @@ Matcher a : List U8 -> Result (List U8) [DoesNotMatch]a
 ## See [the Zulip thread](https://roc.zulipchat.com/#narrow/channel/231634-beginners/topic/Type.20mismatch.20with.20a.20function.20in.20arguments/near/512117920)
 Spec a : {
     field_name : [Anonymous, Named Str],
-    length : U64,
+    length : Interval Unsigned64,
     matcher : Matcher a,
 }
 
@@ -36,7 +38,7 @@ anything = |input|
 ## Returns a matcher that matches a given literal.
 literal : List U8 -> Matcher a
 literal = |value|
-    \input ->
+    |input|
         if input == value then
             Ok(input)
         else
@@ -60,21 +62,19 @@ expect
     actual = literal(value)(input)
     actual == Err(DoesNotMatch)
 
-## Internal helper function,
-## that returns a segment of a given length and the rest of the input
-## or returns `Err(DoesNotMatch)` if the input is too short.
-split_input_segment :
-    List U8,
-    { length : U64 }*
-    -> Result { input_segment : List U8, rest_input : List U8 } [DoesNotMatch]
-split_input_segment = |input, { length }|
-    { before: input_segment, others: rest_input } = List.split_at(input, length)
-    if List.len(input_segment) < length then
+## Interval helper function,
+## that returns an error if the input bytes length is less than the requested minimum,
+## otherwise returns the input bytes back.
+assert_min_length : List U8, U64 -> Result (List U8) [DoesNotMatch]
+assert_min_length = |bytes, min_length|
+    if List.len(bytes) < min_length then
         Err(DoesNotMatch)
     else
-        Ok({ input_segment, rest_input })
+        Ok(bytes)
 
 ## See `all_specs` for the public API.
+## Warning: the function is not tail optimized,
+## so it may cause a stack overflow for large inputs.
 all_specs_recursive : List U8, List (Spec _), Dict Str Str -> Result (Dict Str Str) [DoesNotMatch]
 all_specs_recursive = |input, specs, acc|
     when specs is
@@ -85,21 +85,33 @@ all_specs_recursive = |input, specs, acc|
                 Err(DoesNotMatch)
 
         [spec, .. as rest_specs] ->
-            { input_segment, rest_input } = split_input_segment(input, spec)?
+            spec.length
+            |> Interval.bounded_within(1, List.len(input))
+            |> Result.map_err(|_| DoesNotMatch)?
+            |> Interval.walk_until(
+                Ok(acc),
+                |_, length|
+                    List.split_at(input, length)
+                    |> |{ before: input_segment, others: rest_input }|
+                        # Even though `field_value` is not always used,
+                        # it's important to call `spec.matcher?` here
+                        field_value =
+                            input_segment
+                            |> assert_min_length(length)?
+                            |> spec.matcher?
+                            |> Str.from_utf8_lossy
 
-            # Even thought `field_value` is not always used,
-            # it's important to call `spec.matcher?` here
-            field_value =
-                input_segment
-                |> spec.matcher?
-                |> Str.from_utf8_lossy
-
-            all_specs_recursive(
-                rest_input,
-                rest_specs,
-                when spec.field_name is
-                    Named(name) -> Dict.insert(acc, name, field_value)
-                    Anonymous -> acc,
+                        all_specs_recursive(
+                            rest_input,
+                            rest_specs,
+                            when spec.field_name is
+                                Named(name) -> Dict.insert(acc, name, field_value)
+                                Anonymous -> acc,
+                        )
+                    |> |branch_result|
+                        when branch_result is
+                            Ok(fields) -> Break(Ok(fields))
+                            Err(error) -> Continue(Err(error)),
             )
 
 ## Attempts to match a list of `Spec`s against the given input (as a list of bytes).
@@ -114,17 +126,17 @@ all_specs = |input, specs|
 expect
     # that `all_specs` passes segment of a request size
     # and returns `Ok` with the correct values
-    # when input matches the specs
+    # when input matches specs with defined length
     input = ['B', 'u', 'z', 'z', 'F', 'u', 'z', 'z']
     specs = [
         {
             field_name: Named("field1"),
-            length: 4,
+            length: Interval.exact(4),
             matcher: literal(['B', 'u', 'z', 'z']),
         },
         {
             field_name: Named("field2"),
-            length: 4,
+            length: Interval.exact(4),
             matcher: literal(['F', 'u', 'z', 'z']),
         },
     ]
@@ -138,12 +150,12 @@ expect
     specs = [
         {
             field_name: Named("field1"),
-            length: 1,
+            length: Interval.exact(1),
             matcher: |x| Ok(x),
         },
         {
             field_name: Named("field2"),
-            length: 1,
+            length: Interval.exact(1),
             matcher: |_| Err(DoesNotMatch),
         },
     ]
@@ -181,12 +193,12 @@ expect
     specs = [
         {
             field_name: Named("field1"),
-            length: 2,
+            length: Interval.exact(2),
             matcher: |x| Ok(x),
         },
         {
             field_name: Named("field2"),
-            length: 5,
+            length: Interval.exact(5),
             matcher: |x| Ok(x),
         },
     ]
@@ -200,9 +212,48 @@ expect
     specs = [
         {
             field_name: Anonymous,
-            length: 1,
+            length: Interval.exact(1),
             matcher: |x| Ok(x),
         },
     ]
     actual = all_specs(input, specs)
     actual == Ok(Dict.empty({}))
+
+expect
+    # that `all_specs` passes segment of a request size
+    # and returns `Ok` with the correct values
+    # when input matches specs with undefined length
+    input = ['B', 'u', 'z', 'z', 'F', 'u', 'z', 'z']
+    specs = [
+        {
+            field_name: Named("field1"),
+            length: Interval.all,
+            matcher: anything,
+        },
+        {
+            field_name: Named("field2"),
+            length: Interval.exact(4),
+            matcher: literal(['F', 'u', 'z', 'z']),
+        },
+    ]
+    actual = all_specs(input, specs)
+    actual == Ok(Dict.from_list([("field1", "Buzz"), ("field2", "Fuzz")]))
+
+expect
+    # that `all_specs` returns `Err(DoesNotMatch)`
+    # when input doesn't match specs with undefined length
+    input = ['B', 'u', 'z', 'z', 'F', 'u', 'z', 'z']
+    specs = [
+        {
+            field_name: Named("field1"),
+            length: Interval.all,
+            matcher: literal(['B', 'u', 'z']),
+        },
+        {
+            field_name: Named("field2"),
+            length: Interval.exact(4),
+            matcher: literal(['F', 'u', 'z', 'z']),
+        },
+    ]
+    actual = all_specs(input, specs)
+    actual == Err(DoesNotMatch)

@@ -1,6 +1,7 @@
 module [parse_template]
 
 import Match exposing [Spec, Matcher]
+import Interval exposing [Interval]
 
 parse_field_name : List U8 -> [Anonymous, Named Str]
 parse_field_name = |field_name|
@@ -32,12 +33,15 @@ expect
 ## Parses a literal segment (a list of bytes)
 ## into a `Spec` with a `Match.literal` matcher.
 parse_literal_segment : List U8 -> Spec _
-parse_literal_segment = |segment|
-    { field_name: Anonymous, length: List.len(segment), matcher: Match.literal(segment) }
+parse_literal_segment = |segment| {
+    field_name: Anonymous,
+    length: segment |> List.len |> Interval.exact,
+    matcher: segment |> Match.literal,
+}
 
 ## Parses a token length (a list of bytes) into a `U64`.
 ## Returns `Err` if the token length is not valid, e.g. not a number.
-parse_length : List U8 -> Result U64 [InvalidTokenLength Str]
+parse_length : List U8 -> Result (Interval Unsigned64) [InvalidTokenLength Str]
 parse_length = |length_str|
     length_utf8 =
         length_str
@@ -45,18 +49,16 @@ parse_length = |length_str|
 
     length_utf8
     |> Str.to_u64
-    |> Result.map_err(
-        |err|
-            when err is
-                InvalidNumStr -> InvalidTokenLength(length_utf8),
-    )
+    |> Result.map_err(|_| InvalidTokenLength(length_utf8))?
+    |> Interval.exact
+    |> Ok
 
 expect
     # that `parse_length` returns `Ok` with the length
     # when the length is a valid number
     length_str = ['1', '2', '3']
     actual = parse_length(length_str)
-    actual == Ok(123)
+    actual == Ok(Interval.exact(123))
 
 expect
     # that `parse_length` returns `Err(InvalidTokenLength)`
@@ -90,9 +92,33 @@ parse_token_type = |token_type|
 parse_token : List U8 -> Result (Spec _) [TooManyTokenParts Str, InvalidTokenLength Str, InvalidTokenType Str]
 parse_token = |token|
     when List.split_on(token, ':') is
-        [] -> crash("Only fixed size token are implemented")
-        [_] -> crash("Only fixed size token are implemented")
-        [_, _] -> crash("Only fixed size token are implemented")
+        [] ->
+            Ok(
+                {
+                    field_name: Anonymous,
+                    length: Interval.all,
+                    matcher: Match.anything,
+                },
+            )
+
+        [field_name] ->
+            Ok(
+                {
+                    field_name: parse_field_name(field_name),
+                    length: Interval.all,
+                    matcher: Match.anything,
+                },
+            )
+
+        [field_name, token_type] ->
+            Ok(
+                {
+                    field_name: parse_field_name(field_name),
+                    length: Interval.all,
+                    matcher: parse_token_type(token_type)?,
+                },
+            )
+
         [field_name, token_type, length] ->
             Ok(
                 {
@@ -138,7 +164,7 @@ expect
     # that `split_first_segment` returns a segment and the rest of the input
     # when the template starts with a token enclosed in curly braces
     actual = split_first_segment(
-        ['{', 'f', 'i', 'e', 'l', 'd', '1', '}', 'x', '{', 'x', '}']
+        ['{', 'f', 'i', 'e', 'l', 'd', '1', '}', 'x', '{', 'x', '}'],
     )
     actual
     == Ok(
@@ -152,7 +178,7 @@ expect
     # that `split_first_segment` returns a segment and the rest of the input
     # when the template starts with a literal string
     actual = split_first_segment(
-        ['t', 'e', 'x', 't', '{', 'x', '}', '{', 'y', '}']
+        ['t', 'e', 'x', 't', '{', 'x', '}', '{', 'y', '}'],
     )
     actual
     == Ok(
@@ -167,7 +193,7 @@ expect
     # when the template starts with a token enclosed in curly braces
     # but the closing bracket is missing
     actual = split_first_segment(
-        ['{', 'f', 'i', 'e', 'l', 'd', '1']
+        ['{', 'f', 'i', 'e', 'l', 'd', '1'],
     )
     actual == Err(MissingClosingBracket)
 
@@ -175,7 +201,7 @@ expect
     # that `split_first_segment` returns an entire template as a segment
     # when the template is a single token enclosed in curly braces
     actual = split_first_segment(
-        ['{', 'f', 'i', 'e', 'l', 'd', '1', '}']
+        ['{', 'f', 'i', 'e', 'l', 'd', '1', '}'],
     )
     actual
     == Ok(
@@ -189,7 +215,7 @@ expect
     # that `split_first_segment` returns an entire template as a segment
     # when the template is a single literal string
     actual = split_first_segment(
-        ['t', 'e', 'x', 't']
+        ['t', 'e', 'x', 't'],
     )
     actual
     == Ok(
@@ -217,18 +243,46 @@ parse_template_recursive = |template_bytes, acc|
 ##   or `{field_name:token_type:length}`
 ##
 ## Examples:
+## - `"{}"` -> not implemented yet
+##   ```
+##   [
+##     {
+##       field_name: Anonymous,
+##       length: Interval.all,
+##       matcher: Match.anything
+##     }
+##   ]
+##   ```
 ## - `"{field1}"` -> not implemented yet
+##   ```
+##   [
+##     {
+##       field_name: "field1",
+##       length: Interval.all,
+##       matcher: Match.anything
+##     }
+##   ]
+##   ```
 ## - `"{field1:s}"` -> not implemented yet
+##   ```
+##   [
+##     {
+##       field_name: "field1",
+##       length: Interval.all,
+##       matcher: Match.anything
+##     }
+##   ]
+##   ```
 ## - `"{field1:s:6}text"` ->
 ##   ```
 ##   [
 ##     {
 ##       field_name: Named "field1",
-##       length: 6,
+##       length: Interval.exact(6),
 ##       matcher: Match.anything
 ##     }, {
 ##       field_name: Anonymous,
-##       length: 4,
+##       length: Interval.exact(4),
 ##       matcher: Match.literal(['t', 'e', 'x', 't'])
 ##     }
 ##   ]

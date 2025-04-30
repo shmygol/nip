@@ -1,12 +1,12 @@
 ## Intervals are used to express constraints like minimum and maximum lengths.
 module [
     Interval,
+    exact,
     at_least,
     at_most,
     all,
     bounded_within,
     BoundedInterval,
-    exact,
     contains_strict,
     to_list,
     split_head,
@@ -34,6 +34,11 @@ Interval int_type_variable : {
         Unbound,
     ],
 }
+
+## Returns an interval with a given value at both ends.
+exact : Int a -> Interval a
+exact = |value|
+    { from: At(value), to: At(value) }
 
 ## Returns an interval with a given lower bunded and unbounded upper bound.
 at_least : Int a -> Interval a
@@ -205,11 +210,6 @@ expect
 
     actual = normalized(interval)
     actual == Err(IntervalWasEmpty)
-
-## Returns an interval with a given value at both ends.
-exact : Int a -> BoundedInterval a
-exact = |value|
-    { from: At(value), to: At(value) }
 
 ## Returns `Bool.true` if a value is within the bounded interval,
 ## `Bool.false` otherwise.
@@ -490,6 +490,6 @@ expect
         interval,
         "",
         |state, x|
-            Continue("${state} ${Num.to_str(x)}")
+            Continue("${state} ${Num.to_str(x)}"),
     )
     actual == ""
