@@ -13,16 +13,17 @@ A template can contain fields in the following format:
 
 Where: 
 
-- `name` - a valid field name in Roc or `"_"` to match the spec but ignore the value
+- `name` - a valid field name in Roc or `"_"` to match the spec but not return the value.
 - `type` - an optional type of a matcher for the field. Currently all matchers return a string.
 - `length` - an optional length for the value to match
 
 All segments of the token are optional, for example:
 
-- {} - match any value and ignore it.
-- {name} - match any value and return it under the given field name.
-- {name:type} - match value of a given type and return it as a string under the given field name.
-- {name:type:length} - match value of a given type of exact length and return it as a string a string under the given field name.
+- `{}` - match any value and ignore it.
+- `{name}` - match any value and return it under the given field name.
+- `{name:type}` - match value of a given type and return it as a string under the given field name.
+- `{name:type:length}` - match value of a given type of exact length and return it as a string a string under the given field name.
+- `{_:type}`/`{_:type:length}` - it's also possible to omit the name to match the spec but not return the value.
 
 Supported types:
 
