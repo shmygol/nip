@@ -81,11 +81,12 @@ expect
 parse_token_type : List U8 -> Result (Matcher _) [InvalidTokenType Str]
 parse_token_type = |token_type|
     when token_type is
-        ['s'] -> Ok(Match.anything)
+        ['*'] -> Ok(Match.anything)
+        ['s'] -> Ok(Match.word)
+        ['w'] -> Ok(Match.whitespace)
         ['i'] -> Ok(Match.signed_integer)
         ['u'] -> Ok(Match.unsigned_integer)
         ['d'] -> Ok(Match.decimal)
-        ['w'] -> Ok(Match.whitespace)
         ['[', '^', .. as allowed_bytes, ']'] -> Ok(Match.negated_charset(allowed_bytes))
         ['[', .. as allowed_bytes, ']'] -> Ok(Match.charset(allowed_bytes))
         _ -> token_type |> Str.from_utf8_lossy |> InvalidTokenType |> Err

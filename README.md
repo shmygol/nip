@@ -27,10 +27,11 @@ All segments of the token are optional, for example:
 
 Supported types:
 
-- `s` - Default type. Matches any value.
+- `*` - Default type. Matches any value.
+- `s` - Match all non-whitespace characters.
+- `w` - Whitespace(s).
 - `i` - Integer optionally preceded by a sign.
 - `u` - Unsigned integer.
 - `d` - Decimal optionally preceded by a sign.
-- `w` - Whitespace(s).
 - `[characters]` - Characters specified between the brackets.
 - `[^characters]` - Any characters except for the specified  between the brackets.

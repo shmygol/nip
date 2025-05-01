@@ -12,6 +12,7 @@ module [
     negated_charset,
     charset,
     whitespace,
+    word,
     signed_integer,
     unsigned_integer,
     decimal,
@@ -72,6 +73,8 @@ expect
     actual = literal(['a', 'b'])(input)
     actual == Err(DoesNotMatch)
 
+## Returns a matcher,
+## that matches all input bytes except the ones in the given charset.
 negated_charset : List U8 -> Matcher _
 negated_charset = |disallowed_bytes|
     |input|
@@ -102,6 +105,7 @@ expect
     actual = negated_charset(['a', 'b'])(input)
     actual == Err(DoesNotMatch)
 
+## Returns a matcher that matches a given charset.
 charset : List U8 -> Matcher _
 charset = |allowed_bytes|
     |input|
@@ -140,9 +144,16 @@ expect
     actual = charset(['a', 'b'])(input)
     actual == Err(DoesNotMatch)
 
+## Alias for `charset([' ', '\t', '\n', '\r'])`
 whitespace : Matcher _
 whitespace = charset([' ', '\t', '\n', '\r'])
 
+## Alias for `negated_charset([' ', '\t', '\n', '\r'])`
+word : Matcher _
+word = negated_charset([' ', '\t', '\n', '\r'])
+
+## Internal helper function,
+## that returns a matcher for numbers.
 number : (Str -> Result (Num _) _) -> Matcher _
 number = |to_num|
     |input|
