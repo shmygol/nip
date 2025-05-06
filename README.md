@@ -35,3 +35,7 @@ Supported types:
 - `d` - Decimal optionally preceded by a sign.
 - `[characters]` - Characters specified between the brackets.
 - `[^characters]` - Any characters except for the specified  between the brackets.
+
+# Known issues
+
+- https://github.com/shmygol/nip/issues/8: ⚠️ Unfortunately, the library is not usable because of a compiler bug
